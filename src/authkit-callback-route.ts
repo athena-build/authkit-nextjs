@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { decodeJwt } from 'jose';
 import { workos } from './workos.js';
 import { WORKOS_CLIENT_ID } from './env-variables.js';
-import { encryptSession } from './session.js';
+import { encryptSession, createHS256Token } from './session.js';
 import { cookieName, cookieOptions } from './cookie.js';
 import { HandleAuthOptions } from './interfaces.js';
 
@@ -21,6 +22,9 @@ export function handleAuth(options: HandleAuthOptions = {}) {
           clientId: WORKOS_CLIENT_ID,
           code,
         });
+
+        // Create the HS256-signed token
+        const hs256AccessToken = await createHS256Token(decodeJwt(accessToken));
 
         const url = request.nextUrl.clone();
 
@@ -49,7 +53,7 @@ export function handleAuth(options: HandleAuthOptions = {}) {
 
         // The refreshToken should never be accesible publicly, hence why we encrypt it in the cookie session
         // Alternatively you could persist the refresh token in a backend database
-        const session = await encryptSession({ accessToken, refreshToken, user, impersonator });
+        const session = await encryptSession({ accessToken, hs256AccessToken, refreshToken, user, impersonator });
         cookies().set(cookieName, session, cookieOptions);
 
         return response;

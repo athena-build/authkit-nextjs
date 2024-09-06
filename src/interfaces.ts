@@ -10,6 +10,7 @@ export interface Impersonator {
 }
 export interface Session {
   accessToken: string;
+  hs256AccessToken: string;
   refreshToken: string;
   user: User;
   impersonator?: Impersonator;
@@ -23,7 +24,9 @@ export interface UserInfo {
   permissions?: string[];
   impersonator?: Impersonator;
   accessToken: string;
+  hs256AccessToken: string;
 }
+
 export interface NoUserInfo {
   user: null;
   sessionId?: undefined;
@@ -31,6 +34,7 @@ export interface NoUserInfo {
   role?: undefined;
   impersonator?: undefined;
   accessToken?: undefined;
+  hs256AccessToken?: undefined;
 }
 
 export interface AccessToken {

@@ -1,11 +1,16 @@
 import { redirect } from 'next/navigation';
 import { cookies, headers } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
-import { jwtVerify, createRemoteJWKSet, decodeJwt } from 'jose';
+import { jwtVerify, createRemoteJWKSet, decodeJwt, SignJWT, JWTPayload } from 'jose';
 import { sealData, unsealData } from 'iron-session';
 import { cookieName, cookieOptions } from './cookie.js';
 import { workos } from './workos.js';
-import { WORKOS_CLIENT_ID, WORKOS_COOKIE_PASSWORD, WORKOS_REDIRECT_URI } from './env-variables.js';
+import {
+  WORKOS_CLIENT_ID,
+  WORKOS_COOKIE_PASSWORD,
+  WORKOS_REDIRECT_URI,
+  WORKOS_HS256_JWT_SECRET,
+} from './env-variables.js';
 import { getAuthorizationUrl } from './get-authorization-url.js';
 import { AccessToken, AuthkitMiddlewareAuth, NoUserInfo, Session, UserInfo } from './interfaces.js';
 
@@ -18,6 +23,13 @@ const JWKS = createRemoteJWKSet(new URL(workos.userManagement.getJwksUrl(WORKOS_
 
 async function encryptSession(session: Session) {
   return sealData(session, { password: WORKOS_COOKIE_PASSWORD });
+}
+
+async function createHS256Token(payload: JWTPayload): Promise<string> {
+  const hs256Token = await new SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .sign(new TextEncoder().encode(WORKOS_HS256_JWT_SECRET));
+  return hs256Token;
 }
 
 async function updateSession(request: NextRequest, debug: boolean, middlewareAuth: AuthkitMiddlewareAuth) {
@@ -94,11 +106,15 @@ async function updateSession(request: NextRequest, debug: boolean, middlewareAut
       organizationId,
     });
 
+    // Create the HS256-signed token
+    const hs256AccessToken = await createHS256Token(decodeJwt<AccessToken>(accessToken));
+
     if (debug) console.log('Refresh successful:', refreshToken);
 
     // Encrypt session with new access and refresh tokens
     const encryptedSession = await encryptSession({
       accessToken,
+      hs256AccessToken,
       refreshToken,
       user,
       impersonator,
@@ -150,9 +166,13 @@ async function refreshSession({
     organizationId: nextOrganizationId ?? organizationIdFromAccessToken,
   });
 
+  // Create the HS256-signed token
+  const hs256AccessToken = await createHS256Token(decodeJwt<AccessToken>(accessToken));
+
   // Encrypt session with new access and refresh tokens
   const encryptedSession = await encryptSession({
     accessToken,
+    hs256AccessToken,
     refreshToken,
     user,
     impersonator,
@@ -170,6 +190,7 @@ async function refreshSession({
     permissions,
     impersonator: session.impersonator,
     accessToken: session.accessToken,
+    hs256AccessToken,
   };
 }
 
@@ -219,6 +240,7 @@ async function getUser({ ensureSignedIn = false } = {}) {
     permissions,
     impersonator: session.impersonator,
     accessToken: session.accessToken,
+    hs256AccessToken: session.hs256AccessToken,
   };
 }
 
@@ -253,7 +275,7 @@ async function getSessionFromHeader(caller: string): Promise<Session | undefined
 
   if (!hasMiddleware) {
     throw new Error(
-      `You are calling \`${caller}\` on a path that isn’t covered by the AuthKit middleware. Make sure it is running on all paths you are calling \`${caller}\` from by updating your middleware config in \`middleware.(js|ts)\`.`,
+      `You are calling \`${caller}\` on a path that isn't covered by the AuthKit middleware. Make sure it is running on all paths you are calling \`${caller}\` from by updating your middleware config in \`middleware.(js|ts)\`.`,
     );
   }
 
@@ -269,4 +291,4 @@ function getReturnPathname(url: string): string {
   return `${newUrl.pathname}${newUrl.searchParams.size > 0 ? '?' + newUrl.searchParams.toString() : ''}`;
 }
 
-export { encryptSession, getUser, refreshSession, terminateSession, updateSession };
+export { encryptSession, getUser, refreshSession, terminateSession, updateSession, createHS256Token };

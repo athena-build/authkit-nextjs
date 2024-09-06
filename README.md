@@ -31,6 +31,7 @@ WORKOS_CLIENT_ID="client_..." # retrieved from the WorkOS dashboard
 WORKOS_API_KEY="sk_test_..." # retrieved from the WorkOS dashboard
 WORKOS_REDIRECT_URI="http://localhost:3000/callback" # configured in the WorkOS dashboard
 WORKOS_COOKIE_PASSWORD="<your password>" # generate a secure password here
+WORKOS_HS256_JWT_SECRET="<your secret>" # generate a secure secret here
 ```
 
 `WORKOS_COOKIE_PASSWORD` is the private key used to encrypt the session cookie. It has to be at least 32 characters long. You can use the [1Password generator](https://1password.com/password-generator/) or the `openssl` library to generate a strong password via the command line:
@@ -38,6 +39,8 @@ WORKOS_COOKIE_PASSWORD="<your password>" # generate a secure password here
 ```
 openssl rand -base64 24
 ```
+
+`WORKOS_HS256_JWT_SECRET` is used to sign the HS256 JWT access token. It should be a secure, random string. You can generate it using the same method as `WORKOS_COOKIE_PASSWORD`.
 
 To use the `signOut` method, you'll need to set your app's homepage in your WorkOS dashboard settings under "Redirects".
 
@@ -227,6 +230,60 @@ export default async function HomePage() {
   });
 
   return <div>{serviceData}</div>;
+}
+```
+
+
+```jsx
+import { getUser } from '@workos-inc/authkit-nextjs';
+
+export default async function HomePage() {
+  const { accessToken } = await getUser();
+
+  if (!accessToken) {
+    return <div>Not signed in</div>;
+  }
+
+  const serviceData = await fetch('/api/path', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  return <div>{serviceData}</div>;
+}
+```
+
+```jsx
+import { getUser } from '@workos-inc/authkit-nextjs';
+import { createClient } from '@supabase/supabase-js'
+
+export default function Home() {
+  const { hs256AccessToken } = await getUser();
+	
+	// Create a custom supabase client that injects the HS256 access token into the request headers
+  // HS256 tokens are needed by Supabase until WorkOS is supported by https://github.com/supabase/supabase/tree/master/apps/docs/content/guides/auth/third-party
+	function createWorkosSupabaseClient() {
+	  return createClient(
+	    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+	    process.env.NEXT_PUBLIC_SUPABASE_KEY!,
+	    {
+	      global: {
+	        fetch: async (url, options = {}) => {
+		        const headers = new Headers(options?.headers)
+	          headers.set('Authorization', `Bearer ${hs256AccessToken}`)
+	          
+	          return fetch(url, {
+	            ...options,
+	            headers,
+	          })
+	        },
+	      },
+	    },
+	  )
+	}
+	
+	//... The rest of the code is removed for brevity
 }
 ```
 
